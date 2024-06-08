@@ -1,0 +1,134 @@
+version: "3"
+services:
+  appsmith:
+    image: appsmith:v1.13
+    container_name: appsmith
+    ports:
+      - "8080:80"
+      - "8081:443"
+    #volumes:
+    #  - ./appsmith-stacks:/appsmith-stacks
+    restart: unless-stopped
+    environment:
+      APPSMITH_ENABLE_EMBEDDED_DB: 0 # don't start internal pg
+      APPSMITH_MONGODB_HOST: mongo
+      APPSMITH_MONGODB_PORT: 27037
+      APPSMITH_MONGODB_DB: appsmith?replicaSet=my-replica-set
+      APPSMITH_MONGODB_USER: appsmith
+      APPSMITH_MONGODB_PASSWD: mysecretpassword
+      APPSMITH_REDIS_URL: redis://redis:6379
+      APPSMITH_SUPERVISOR_PASSWD: appsmithpassword
+      APPSMITH_ENCRYPTION_SALT: appsmithpassword
+      APPSMITH_ENCRYPTION_PASSWD: appsmithpassword
+      #HTTP_PROXY: http://xxx.com:80
+      #HTTPS_PROXY: http://xxx.com:80
+      NO_PROXY: localhost,127.0.0.1
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - mynet
+      - default
+
+  mongo:
+    image: mongo:5.0.25
+    container_name: mongo
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - ./data/mongo-1:/data/db
+    restart: unless-stopped
+    ports:
+      - 27017:27017
+    healthcheck:
+      test: test $$(echo "try{rs.initiate({_id:'my-replica-set',members:[{_id:0,host:\"mongo:27017\"},{_id:1,host:\"mongo2:27027\"},{_id:2,host:\"mongo3:27037\"}]}).ok;db.createUser({user:'appsmith',pwd:'mysecretpassword',roles:[{role:'root',db:'admin'}, 'readWrite']}).ok;}catch(err){rs.status().ok}" | mongo --port 27017 --quiet appsmith) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+  mongo2:
+    image: mongo:5.0.25
+    container_name: mongo2
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27027"]
+    volumes:
+      - ./data/mongo-2:/data/db
+    ports:
+      - 27027:27027
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27027 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+  mongo3:
+    image: mongo:5.0.25
+    container_name: mongo3
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27037"]
+    volumes:
+      - ./data/mongo-3:/data/db
+    ports:
+      - 27037:27037
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27037 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+  redis:
+    image: redis:7.2.4
+    container_name: redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis/:/data
+    restart: unless-stopped
+    networks:
+      - mynet
+
+  camunda:
+    image: camunda/camunda-bpm-platform:7.20.0
+    container_name: camunda3
+    ports:
+      - "8084:8080"
+    #volumes:
+    #  - ./camunda:/camunda
+    restart: unless-stopped
+    environment:
+      DB_DRIVER: org.postgresql.Driver
+      DB_URL: jdbc:postgresql://pg:5432/postgres
+      DB_USERNAME: postgres
+      DB_PASSWORD: mysecretpassword
+      WAIT_FOR: pg:5432
+      #HTTP_PROXY: http://xxx.com:80
+      #HTTPS_PROXY: http://xxx.com:80
+      NO_PROXY: localhost,127.0.0.1
+      #JDK_JAVA_OPTIONS: "-Dhttp.proxyHost=xxx.com -Dhttp.proxyPort=80 -Dhttps.proxyHost=xxx.com -Dhttps.proxyPort=80 -Dhttp.nonProxyHosts=localhost,127.0.0.1 -Dhttps.nonProxyHosts=localhost,127.0.0.1"
+    depends_on:
+      pg:
+        condition: service_started
+    networks:
+      - mynet
+      - default
+
+  pg:
+    image: postgres:15.6
+    container_name: postgres3
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    networks:
+      - mynet
+
+networks:
+  mynet:
+    driver: bridge

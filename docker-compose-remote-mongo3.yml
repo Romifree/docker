@@ -1,0 +1,54 @@
+version: "3"
+services:
+  mongo:
+    image: mongo:5.0.25
+    container_name: mongo
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - ./data/mongo-1:/data/db
+    restart: unless-stopped
+    ports:
+      - 27017:27017
+    healthcheck: #1. enable replica set at startup 启动时初始化replica set, 2. connection db：连接db appsmith?replicaSet=my-replica-set, 3. replace your-ip with your vm ip 替换your-ip成机器ip，允许远程连接mongo
+      test: test $$(echo "try{rs.initiate({_id:'my-replica-set',members:[{_id:0,host:\"your-ip:27017\"},{_id:1,host:\"your-ip:27027\"},{_id:2,host:\"your-ip:27037\"}]}).ok;db.createUser({user:'appsmith',pwd:'mysecretpassword',roles:[{role:'root',db:'admin'}, 'readWrite']}).ok;}catch(err){rs.status().ok}" | mongo --port 27017 --quiet appsmith) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+      - default #expose port on internet 开启端口允许远程连接
+
+  mongo2:
+    image: mongo:5.0.25
+    container_name: mongo2
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27027"]
+    volumes:
+      - ./data/mongo-2:/data/db
+    ports:
+      - 27027:27027
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27027 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+      - default
+
+  mongo3:
+    image: mongo:5.0.25
+    container_name: mongo3
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27037"]
+    volumes:
+      - ./data/mongo-3:/data/db
+    ports:
+      - 27037:27037
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27037 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+      - default
+
+networks:
+  mynet:
+    driver: bridge

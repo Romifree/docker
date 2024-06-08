@@ -1,0 +1,51 @@
+version: "3"
+services:
+  mongo:
+    image: mongo:5.0.25
+    container_name: mongo
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - ./data/mongo-1:/data/db
+    restart: unless-stopped
+    ports:
+      - 27017:27017
+    healthcheck: #1. enable replica set at startup 启动时初始化replica set 2. connection db：连接db appsmith?replicaSet=my-replica-set
+      test: test $$(echo "try{rs.initiate({_id:'my-replica-set',members:[{_id:0,host:\"mongo:27017\"},{_id:1,host:\"mongo2:27027\"},{_id:2,host:\"mongo3:27037\"}]}).ok;db.createUser({user:'appsmith',pwd:'mysecretpassword',roles:[{role:'root',db:'admin'}, 'readWrite']}).ok;}catch(err){rs.status().ok}" | mongo --port 27017 --quiet appsmith) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+  mongo2:
+    image: mongo:5.0.25
+    container_name: mongo2
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27027"]
+    volumes:
+      - ./data/mongo-2:/data/db
+    ports:
+      - 27027:27027
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27027 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+  mongo3:
+    image: mongo:5.0.25
+    container_name: mongo3
+    command: ["--replSet", "my-replica-set", "--bind_ip_all", "--port", "27037"]
+    volumes:
+      - ./data/mongo-3:/data/db
+    ports:
+      - 27037:27037
+    healthcheck:
+      test: test $$(echo "rs.status().ok" | mongo --port 27037 --quiet) -eq 1
+      interval: 10s
+      start_period: 30s
+    networks:
+      - mynet
+
+networks:
+  mynet:
+    driver: bridge
